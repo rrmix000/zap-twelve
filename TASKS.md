@@ -1,4 +1,4 @@
-# Electric Chair Discord Activity 作業書
+# Zap 12 作業書
 
 ## 0. 実装前確認
 

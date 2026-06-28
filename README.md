@@ -1,6 +1,10 @@
-# Electric Chair Discord Activity
+# Zap 12
 
-Discord Activity で遊ぶ電気椅子ゲームの試作です。
+Discord Activity で遊ぶビリビリナンバーの試作です。
+
+日本語名: ビリビリナンバー
+英語名: Zap 12
+repo/package 名: zap-twelve
 
 最初の実装はシンプル優先です。
 

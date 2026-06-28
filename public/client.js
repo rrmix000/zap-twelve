@@ -25,7 +25,7 @@ function getOrCreateParticipantId() {
   const debugParticipant = params.get("participant");
   if (debugParticipant) return debugParticipant.slice(0, 80);
 
-  const key = "electric-chair-participant-id";
+  const key = "zap-twelve-participant-id";
   const existing = localStorage.getItem(key);
   if (existing) return existing;
 

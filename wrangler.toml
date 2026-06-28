@@ -1,4 +1,4 @@
-name = "electric-chair-discord-activity"
+name = "zap-twelve"
 main = "src/worker.js"
 compatibility_date = "2026-06-28"
 
