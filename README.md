@@ -10,8 +10,8 @@ repo/package 名: zap-twelve
 - Vanilla HTML/CSS/JS
 - Cloudflare Workers
 - Durable Objects
-- HTTP API + 1秒ポーリング
-- WebSocketなし
+- WebSocket 同期
+- HTTP API は設定取得のみ
 - Viteなし
 
 ## Local Dev

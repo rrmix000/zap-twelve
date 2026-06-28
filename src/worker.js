@@ -8,6 +8,13 @@ const ROLE_A = "A";
 const ROLE_B = "B";
 const ROLE_SPECTATOR = "spectator";
 const PLAYER_ROLES = [ROLE_A, ROLE_B];
+const CLOSE_CODE = 4000;
+const GAME_OVER_CLOSE_CODE = 4001;
+const TTL = {
+  lobby: 15 * 60 * 1000,
+  playing: 45 * 60 * 1000,
+  noPlayers: 5 * 60 * 1000,
+};
 
 function json(data, init = {}) {
   return new Response(JSON.stringify(data), {
@@ -28,7 +35,7 @@ function emptyPlayer() {
     id: null,
     name: "",
     lockedIn: false,
-    resetRequested: false,
+    deleteRequested: false,
   };
 }
 
@@ -38,6 +45,7 @@ function initialGame() {
     trapper: ROLE_B,
     sitter: ROLE_A,
     trappedNumber: null,
+    previewTrap: null,
     previewSeat: null,
     pendingResult: null,
     scores: { A: 0, B: 0 },
@@ -52,6 +60,8 @@ function initialState() {
   return {
     phase: "lobby",
     version: 0,
+    lastActionAt: Date.now(),
+    closeRequestedAt: null,
     players: {
       A: emptyPlayer(),
       B: emptyPlayer(),
@@ -87,8 +97,12 @@ function publicState(state, participantId = null) {
   const role = participantId ? getParticipantRole(state, participantId) : null;
   const canSeeTrap =
     state.game.trappedNumber !== null &&
-    (role === state.game.trapper || state.settings.revealTrapToSpectators || state.phase === "result" || state.phase === "gameOver");
-  const canSeePreview = state.phase === "seat" && (role === state.game.trapper || role === state.game.sitter);
+    (role === state.game.trapper ||
+      (role === ROLE_SPECTATOR && state.settings.revealTrapToSpectators) ||
+      state.phase === "result" ||
+      state.phase === "gameOver");
+  const canSeePreviewSeat = state.phase === "seat" && (role === state.game.trapper || role === state.game.sitter || role === ROLE_SPECTATOR);
+  const canSeePreviewTrap = state.phase === "trap" && (role === state.game.trapper || role === ROLE_SPECTATOR);
 
   return {
     ...state,
@@ -99,7 +113,8 @@ function publicState(state, participantId = null) {
     game: {
       ...state.game,
       trappedNumber: canSeeTrap ? state.game.trappedNumber : null,
-      previewSeat: canSeePreview ? state.game.previewSeat : null,
+      previewTrap: canSeePreviewTrap ? (state.game.previewTrap ?? null) : null,
+      previewSeat: canSeePreviewSeat ? (state.game.previewSeat ?? null) : null,
     },
   };
 }
@@ -118,23 +133,8 @@ function assertParticipant(body) {
 
 function bump(state) {
   state.version += 1;
+  state.lastActionAt = Date.now();
   return state;
-}
-
-function resetGameOnly(state) {
-  state.phase = "trap";
-  state.players.A.lockedIn = true;
-  state.players.B.lockedIn = true;
-  state.players.A.resetRequested = false;
-  state.players.B.resetRequested = false;
-  state.game = initialGame();
-  return bump(state);
-}
-
-function resetRoomCompletely(state) {
-  const next = initialState();
-  next.version = state.version + 1;
-  return next;
 }
 
 function joinState(state, body) {
@@ -161,7 +161,7 @@ function joinState(state, body) {
       id: participantId,
       name,
       lockedIn: false,
-      resetRequested: false,
+      deleteRequested: false,
     };
   } else if (role === ROLE_SPECTATOR) {
     state.spectators.push({ id: participantId, name });
@@ -196,6 +196,18 @@ function lockIn(state, participantId) {
   return bump(state);
 }
 
+function previewTrap(state, participantId, payload) {
+  if (state.phase !== "trap") return state;
+  const role = getParticipantRole(state, participantId);
+  if (role !== state.game.trapper) throw new Error("Not your trap turn");
+
+  const number = Number(payload?.number);
+  if (!isSeatAvailable(state.game, number)) throw new Error("Seat is not available");
+
+  state.game.previewTrap = number;
+  return bump(state);
+}
+
 function setTrap(state, participantId, payload) {
   if (state.phase !== "trap") throw new Error("Not trap phase");
   const role = getParticipantRole(state, participantId);
@@ -205,6 +217,7 @@ function setTrap(state, participantId, payload) {
   if (!isSeatAvailable(state.game, number)) throw new Error("Seat is not available");
 
   state.game.trappedNumber = number;
+  state.game.previewTrap = null;
   state.game.previewSeat = null;
   state.game.pendingResult = null;
   state.phase = "seat";
@@ -249,6 +262,7 @@ function chooseSeat(state, participantId, payload) {
     trappedNumber: state.game.trappedNumber,
   };
   state.game.history.push(entry);
+  state.game.previewTrap = null;
   state.game.previewSeat = null;
   state.game.pendingResult = entry;
   state.game.winner = getOutcome(state.game);
@@ -282,6 +296,7 @@ function nextTurn(state, participantId) {
   if (!isPlayerRole(role)) throw new Error("Only A or B can continue");
 
   state.game.trappedNumber = null;
+  state.game.previewTrap = null;
   state.game.previewSeat = null;
   state.game.pendingResult = null;
 
@@ -298,28 +313,24 @@ function nextTurn(state, participantId) {
   return bump(state);
 }
 
-function requestReset(state, participantId) {
+function requestRoomDelete(state, participantId) {
   const role = getParticipantRole(state, participantId);
-  if (!isPlayerRole(role)) throw new Error("Only A or B can request reset");
-  state.players[role].resetRequested = true;
+  if (!isPlayerRole(role)) throw new Error("Only A or B can request room deletion");
+  state.players[role].deleteRequested = true;
 
-  if (state.players.A.resetRequested && state.players.B.resetRequested) {
-    return resetRoomCompletely(state);
+  if (state.players.A.deleteRequested && state.players.B.deleteRequested) {
+    state.phase = "closed";
+    state.closeRequestedAt = Date.now();
+    return bump(state);
   }
 
   return bump(state);
 }
 
-function resetRoom(state, participantId) {
+function cancelRoomDelete(state, participantId) {
   const role = getParticipantRole(state, participantId);
-  if (!isPlayerRole(role)) throw new Error("Only A or B can reset room");
-  return resetRoomCompletely(state);
-}
-
-function cancelReset(state, participantId) {
-  const role = getParticipantRole(state, participantId);
-  if (!isPlayerRole(role)) throw new Error("Only A or B can cancel reset");
-  state.players[role].resetRequested = false;
+  if (!isPlayerRole(role)) throw new Error("Only A or B can cancel room deletion");
+  state.players[role].deleteRequested = false;
   return bump(state);
 }
 
@@ -328,6 +339,8 @@ function applyAction(state, body) {
   switch (body.type) {
     case "lockIn":
       return lockIn(state, participantId);
+    case "previewTrap":
+      return previewTrap(state, participantId, body.payload);
     case "setTrap":
       return setTrap(state, participantId, body.payload);
     case "previewSeat":
@@ -336,12 +349,10 @@ function applyAction(state, body) {
       return chooseSeat(state, participantId, body.payload);
     case "next":
       return nextTurn(state, participantId);
-    case "requestReset":
-      return requestReset(state, participantId);
-    case "cancelReset":
-      return cancelReset(state, participantId);
-    case "resetRoom":
-      return resetRoom(state, participantId);
+    case "requestDelete":
+      return requestRoomDelete(state, participantId);
+    case "cancelDelete":
+      return cancelRoomDelete(state, participantId);
     default:
       throw new Error("Unknown action type");
   }
@@ -360,34 +371,192 @@ export class GameRoom {
     await this.state.storage.put("room", state);
   }
 
+  async deleteRoom(reason = "closed", clearAlarm = true) {
+    this.broadcast({ type: "roomClosed", reason });
+    if (clearAlarm) {
+      await this.state.storage.deleteAlarm();
+    }
+    await this.state.storage.deleteAll();
+    for (const socket of this.state.getWebSockets()) {
+      socket.close(CLOSE_CODE, reason);
+    }
+  }
+
+  async scheduleCleanup(state = null) {
+    const roomState = state || (await this.readState());
+    const now = Date.now();
+    let delay = roomState.phase === "lobby" ? TTL.lobby : TTL.playing;
+
+    if (!this.hasPlayerSockets()) {
+      delay = Math.min(delay, TTL.noPlayers);
+    }
+
+    await this.state.storage.setAlarm(now + delay);
+  }
+
+  hasPlayerSockets() {
+    return this.state.getWebSockets().some((socket) => {
+      const meta = socket.deserializeAttachment?.() || {};
+      return meta.role === ROLE_A || meta.role === ROLE_B;
+    });
+  }
+
+  attachSocket(socket, participantId, role = null) {
+    socket.serializeAttachment({
+      participantId,
+      role,
+    });
+  }
+
+  send(socket, message) {
+    socket.send(JSON.stringify(message));
+  }
+
+  broadcast(message) {
+    const sockets = this.state.getWebSockets();
+    for (const socket of sockets) {
+      this.send(socket, message);
+    }
+  }
+
+  async broadcastState(state) {
+    for (const socket of this.state.getWebSockets()) {
+      const meta = socket.deserializeAttachment?.() || {};
+      this.send(socket, {
+        type: "state",
+        state: publicState(state, meta.participantId),
+      });
+    }
+  }
+
+  async sendState(socket, state = null) {
+    const meta = socket.deserializeAttachment?.() || {};
+    const roomState = state || (await this.readState());
+    this.send(socket, {
+      type: "state",
+      state: publicState(roomState, meta.participantId),
+    });
+  }
+
+  async handleJoin(socket, message) {
+    const state = joinState(await this.readState(), message);
+    const role = getParticipantRole(state, message.participantId);
+    this.attachSocket(socket, message.participantId, role);
+    await this.writeState(state);
+    await this.scheduleCleanup(state);
+    await this.broadcastState(state);
+  }
+
+  async handleAction(message) {
+    const state = applyAction(await this.readState(), {
+      ...message,
+      type: message.action,
+    });
+
+    if (state.phase === "closed") {
+      await this.deleteRoom("delete-requested");
+      return;
+    }
+
+    await this.writeState(state);
+    await this.scheduleCleanup(state);
+    await this.broadcastState(state);
+
+    if (state.phase === "gameOver") {
+      await this.state.storage.deleteAlarm();
+      await this.state.storage.deleteAll();
+      for (const socket of this.state.getWebSockets()) {
+        socket.close(GAME_OVER_CLOSE_CODE, "game-over");
+      }
+    }
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
     const participantId = url.searchParams.get("participant");
 
     try {
-      if (request.method === "GET" && url.pathname === "/api/state") {
+      if (request.method === "GET" && url.pathname === "/ws") {
+        if (request.headers.get("Upgrade") !== "websocket") {
+          return error("Expected WebSocket", 426);
+        }
+        if (!participantId) {
+          return error("participant is required");
+        }
+
+        const pair = new WebSocketPair();
+        const [client, server] = Object.values(pair);
         const state = await this.readState();
-        return json(publicState(state, participantId));
-      }
-
-      if (request.method === "POST" && url.pathname === "/api/join") {
-        const body = await request.json();
-        const state = joinState(await this.readState(), body);
-        await this.writeState(state);
-        return json(publicState(state, body.participantId));
-      }
-
-      if (request.method === "POST" && url.pathname === "/api/action") {
-        const body = await request.json();
-        const state = applyAction(await this.readState(), body);
-        await this.writeState(state);
-        return json(publicState(state, body.participantId));
+        const role = getParticipantRole(state, participantId);
+        this.state.acceptWebSocket(server);
+        this.attachSocket(server, participantId, role);
+        await this.sendState(server, state);
+        await this.scheduleCleanup(state);
+        return new Response(null, { status: 101, webSocket: client });
       }
 
       return error("Not found", 404);
     } catch (caught) {
       return error(caught instanceof Error ? caught.message : "Unknown error");
     }
+  }
+
+  async webSocketMessage(socket, rawMessage) {
+    try {
+      const message = JSON.parse(rawMessage);
+      const meta = socket.deserializeAttachment?.() || {};
+      const participantId = typeof message.participantId === "string" ? message.participantId.trim() : meta.participantId;
+      if (!participantId) throw new Error("participantId is required");
+
+      if (message.type === "join") {
+        await this.handleJoin(socket, { ...message, participantId });
+        return;
+      }
+
+      if (message.type === "action") {
+        await this.handleAction({ ...message, participantId });
+        return;
+      }
+
+      if (message.type === "sync") {
+        await this.sendState(socket);
+        return;
+      }
+
+      throw new Error("Unknown message type");
+    } catch (caught) {
+      this.send(socket, {
+        type: "error",
+        message: caught instanceof Error ? caught.message : "Unknown error",
+      });
+    }
+  }
+
+  async webSocketClose(socket, code) {
+    if (code === CLOSE_CODE || code === GAME_OVER_CLOSE_CODE) return;
+    await this.scheduleCleanup();
+  }
+
+  async webSocketError(socket) {
+    await this.scheduleCleanup();
+  }
+
+  async alarm() {
+    const state = await this.readState();
+    const now = Date.now();
+
+    if (!this.hasPlayerSockets()) {
+      await this.deleteRoom("no-players", false);
+      return;
+    }
+
+    const limit = state.phase === "lobby" ? TTL.lobby : TTL.playing;
+    if (now - (state.lastActionAt || 0) >= limit) {
+      await this.deleteRoom("inactive", false);
+      return;
+    }
+
+    await this.scheduleCleanup(state);
   }
 }
 
@@ -413,7 +582,7 @@ export default {
       );
     }
 
-    if (url.pathname.startsWith("/api/")) {
+    if (url.pathname === "/ws" || url.pathname.startsWith("/api/")) {
       const roomName = roomFromRequest(request);
       const id = env.GAME_ROOM.idFromName(roomName);
       const room = env.GAME_ROOM.get(id);
