@@ -38,6 +38,7 @@ function initialGame() {
     trapper: ROLE_B,
     sitter: ROLE_A,
     trappedNumber: null,
+    previewSeat: null,
     pendingResult: null,
     scores: { A: 0, B: 0 },
     strikes: { A: 0, B: 0 },
@@ -87,6 +88,7 @@ function publicState(state, participantId = null) {
   const canSeeTrap =
     state.game.trappedNumber !== null &&
     (role === state.game.trapper || state.settings.revealTrapToSpectators || state.phase === "result" || state.phase === "gameOver");
+  const canSeePreview = state.phase === "seat" && (role === state.game.trapper || role === state.game.sitter);
 
   return {
     ...state,
@@ -97,6 +99,7 @@ function publicState(state, participantId = null) {
     game: {
       ...state.game,
       trappedNumber: canSeeTrap ? state.game.trappedNumber : null,
+      previewSeat: canSeePreview ? state.game.previewSeat : null,
     },
   };
 }
@@ -202,8 +205,21 @@ function setTrap(state, participantId, payload) {
   if (!isSeatAvailable(state.game, number)) throw new Error("Seat is not available");
 
   state.game.trappedNumber = number;
+  state.game.previewSeat = null;
   state.game.pendingResult = null;
   state.phase = "seat";
+  return bump(state);
+}
+
+function previewSeat(state, participantId, payload) {
+  if (state.phase !== "seat") return state;
+  const role = getParticipantRole(state, participantId);
+  if (role !== state.game.sitter) throw new Error("Not your seat turn");
+
+  const number = Number(payload?.number);
+  if (!isSeatAvailable(state.game, number)) throw new Error("Seat is not available");
+
+  state.game.previewSeat = number;
   return bump(state);
 }
 
@@ -233,6 +249,7 @@ function chooseSeat(state, participantId, payload) {
     trappedNumber: state.game.trappedNumber,
   };
   state.game.history.push(entry);
+  state.game.previewSeat = null;
   state.game.pendingResult = entry;
   state.game.winner = getOutcome(state.game);
   state.phase = state.game.winner ? "gameOver" : "result";
@@ -265,6 +282,7 @@ function nextTurn(state, participantId) {
   if (!isPlayerRole(role)) throw new Error("Only A or B can continue");
 
   state.game.trappedNumber = null;
+  state.game.previewSeat = null;
   state.game.pendingResult = null;
 
   if (isRoundComplete(state.game)) {
@@ -306,6 +324,8 @@ function applyAction(state, body) {
       return lockIn(state, participantId);
     case "setTrap":
       return setTrap(state, participantId, body.payload);
+    case "previewSeat":
+      return previewSeat(state, participantId, body.payload);
     case "chooseSeat":
       return chooseSeat(state, participantId, body.payload);
     case "next":

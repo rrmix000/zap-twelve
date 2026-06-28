@@ -108,6 +108,14 @@ async function postAction(type, payload = {}) {
   render();
 }
 
+async function postPreviewSeat(number) {
+  currentState = await request("/api/action", {
+    method: "POST",
+    body: JSON.stringify({ participantId, type: "previewSeat", payload: { number } }),
+  });
+  render();
+}
+
 function renderError(error) {
   ids("waitTitle").textContent = "ERROR";
   ids("waitText").textContent = error instanceof Error ? error.message : "Something went wrong";
@@ -271,6 +279,9 @@ function renderGame(state) {
     onClick(number) {
       selectedNumber = number;
       renderGame(state);
+      if (state.phase === "seat") {
+        postPreviewSeat(number).catch(() => {});
+      }
     },
   });
 
@@ -280,11 +291,16 @@ function renderGame(state) {
 function renderWait(state) {
   const role = meRole(state);
   const turnRole = state.phase === "trap" ? state.game.trapper : state.game.sitter;
+  const canSeePreview = state.phase === "seat" && role === state.game.trapper && state.game.previewSeat;
   ids("waitTitle").textContent = state.phase === "trap" ? `${playerName(state, turnRole)} 仕掛け` : `${playerName(state, turnRole)} 座る`;
-  ids("waitText").textContent = role === "spectator" ? "観戦中" : "相手の操作待ち";
+  ids("waitText").textContent = canSeePreview
+    ? `相手の選択: ${state.game.previewSeat}`
+    : role === "spectator"
+      ? "観戦中"
+      : "相手の操作待ち";
 
   if (state.game.trappedNumber) {
-    buildResultGrid(ids("watchGrid"), null, state.game.trappedNumber);
+    buildResultGrid(ids("watchGrid"), canSeePreview ? state.game.previewSeat : null, state.game.trappedNumber);
   } else {
     ids("watchGrid").replaceChildren();
   }
