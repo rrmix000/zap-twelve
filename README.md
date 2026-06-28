@@ -37,5 +37,25 @@ http://localhost:8787/?room=dev&participant=b
 
 ## Discord
 
-Discord 内では Activity の起動単位から得られる room ID を使う想定です。
-Discord Developer Portal の設定は後続タスクで整理します。
+Discord 内では Activity の `instance_id` / SDK `instanceId` を room ID として使います。
+そのため Discord から起動した場合は room code 入力画面を飛ばします。
+
+### Discord Developer Portal
+
+1. Discord Developer Portal でアプリを作る。
+2. OAuth2 Client ID を控える。
+3. Activities を有効にして、URL Mapping に Worker の URL を設定する。
+
+```text
+/
+https://zap-twelve.rrmix000.workers.dev
+```
+
+4. Cloudflare Worker に `DISCORD_CLIENT_ID` を設定する。
+
+```bash
+wrangler secret put DISCORD_CLIENT_ID
+```
+
+現時点では Discord OAuth の認証までは使っていません。
+名前はアプリ内で入力します。

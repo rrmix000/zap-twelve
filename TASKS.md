@@ -78,7 +78,7 @@
 
 - [x] ロビーの前に room code 入力画面を追加する。
 - [x] URLに `room` がある場合は room code 入力を初期化またはスキップできるようにする。
-- [ ] Discord Activity では `instanceId` を room code として使い、room code 入力画面を飛ばす。
+- [x] Discord Activity では `instanceId` を room code として使い、room code 入力画面を飛ばす。
 - [x] ゲームオーバー後に room を完全初期化する操作を追加する。
 - [x] room reset 時に参加者ごと消す方針にする。
 - [ ] `storage.deleteAll()` 相当の完全初期化ルートを検討する。
@@ -86,11 +86,13 @@
 
 ## 5. Discord Activity 対応
 
-- [ ] UX修正と room lifecycle 整理が終わってから着手する。
-- [ ] Discord Embedded App SDK を読み込む。
-- [ ] Discord 内で起動した場合に `instanceId` を room ID に使う。
+- [x] UX修正と room lifecycle 整理が終わってから着手する。
+- [x] Discord Embedded App SDK を読み込む。
+- [x] Discord 内で起動した場合に `instanceId` を room ID に使う。
 - [x] Discord 外では `?room=dev` を使う。
-- [ ] Discord Developer Portal 用の設定メモを README に書く。
+- [x] Discord Developer Portal 用の設定メモを README に書く。
+- [ ] Discord OAuth でユーザー名を自動入力するか検討する。
+- [ ] Discord 内で実機確認する。
 
 ## 6. ローカル確認
 

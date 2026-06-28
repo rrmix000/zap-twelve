@@ -400,6 +400,19 @@ function roomFromRequest(request) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/api/config") {
+      return json(
+        {
+          discordClientId: env.DISCORD_CLIENT_ID || "",
+        },
+        {
+          headers: {
+            "cache-control": "no-store",
+          },
+        },
+      );
+    }
+
     if (url.pathname.startsWith("/api/")) {
       const roomName = roomFromRequest(request);
       const id = env.GAME_ROOM.idFromName(roomName);

@@ -2,6 +2,8 @@ const SETTINGS = {
   maxNumber: 12,
 };
 
+const DISCORD_SDK_URL = "https://cdn.jsdelivr.net/npm/@discord/embedded-app-sdk@2.5.0/+esm";
+
 const screens = {
   room: document.querySelector("#roomScreen"),
   join: document.querySelector("#joinScreen"),
@@ -20,6 +22,7 @@ let currentState = null;
 let selectedNumber = null;
 let lastTurnKey = "";
 let polling = false;
+let discordSdk = null;
 
 function getOrCreateParticipantId() {
   const params = new URLSearchParams(window.location.search);
@@ -38,6 +41,45 @@ function getOrCreateParticipantId() {
 function getInitialRoomId() {
   const params = new URLSearchParams(window.location.search);
   return params.get("room") || params.get("instance_id") || params.get("instanceId") || "";
+}
+
+function isDiscordLaunch() {
+  const params = new URLSearchParams(window.location.search);
+  return (
+    params.has("frame_id") ||
+    params.has("instance_id") ||
+    params.has("instanceId") ||
+    (params.has("platform") && (params.has("channel_id") || params.has("guild_id")))
+  );
+}
+
+async function loadConfig() {
+  const response = await fetch("/api/config", {
+    headers: {
+      "content-type": "application/json",
+    },
+  });
+  if (!response.ok) throw new Error("Config failed");
+  return response.json();
+}
+
+async function setupDiscord() {
+  if (!isDiscordLaunch()) return;
+
+  try {
+    const config = await loadConfig();
+    if (!config.discordClientId) return;
+
+    const { DiscordSDK } = await import(DISCORD_SDK_URL);
+    discordSdk = new DiscordSDK(config.discordClientId);
+    await discordSdk.ready();
+
+    if (!roomId && discordSdk.instanceId) {
+      roomId = discordSdk.instanceId.slice(0, 80);
+    }
+  } catch (error) {
+    console.warn("Discord SDK setup skipped", error);
+  }
 }
 
 function showScreen(name) {
@@ -443,10 +485,17 @@ ids("resetButton").addEventListener("click", () => {
   postAction(type).catch(renderError);
 });
 
-if (roomId) {
-  ids("roomInput").value = roomId;
-  fetchState();
-} else {
-  renderRoom();
+async function start() {
+  await setupDiscord();
+
+  if (roomId) {
+    ids("roomInput").value = roomId;
+    fetchState();
+  } else {
+    renderRoom();
+  }
+
+  setInterval(fetchState, 1000);
 }
-setInterval(fetchState, 1000);
+
+start();
