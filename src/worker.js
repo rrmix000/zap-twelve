@@ -106,7 +106,7 @@ function publicState(state, participantId = null) {
 
 function sanitizeName(name) {
   const value = typeof name === "string" ? name.trim() : "";
-  return value.slice(0, 16) || "Player";
+  return value.slice(0, 16);
 }
 
 function assertParticipant(body) {
@@ -131,20 +131,20 @@ function resetGameOnly(state) {
   return bump(state);
 }
 
-function resetRoomKeepingPlayers(state) {
-  state.phase = "lobby";
-  state.players.A.lockedIn = false;
-  state.players.B.lockedIn = false;
-  state.players.A.resetRequested = false;
-  state.players.B.resetRequested = false;
-  state.game = initialGame();
-  return bump(state);
+function resetRoomCompletely(state) {
+  const next = initialState();
+  next.version = state.version + 1;
+  return next;
 }
 
 function joinState(state, body) {
   const participantId = assertParticipant(body);
   const name = sanitizeName(body.name);
   const role = body.role;
+
+  if (!name) {
+    throw new Error("name is required");
+  }
 
   state.spectators = state.spectators.filter((spectator) => spectator.id !== participantId);
   for (const playerRole of PLAYER_ROLES) {
@@ -304,10 +304,16 @@ function requestReset(state, participantId) {
   state.players[role].resetRequested = true;
 
   if (state.players.A.resetRequested && state.players.B.resetRequested) {
-    return resetRoomKeepingPlayers(state);
+    return resetRoomCompletely(state);
   }
 
   return bump(state);
+}
+
+function resetRoom(state, participantId) {
+  const role = getParticipantRole(state, participantId);
+  if (!isPlayerRole(role)) throw new Error("Only A or B can reset room");
+  return resetRoomCompletely(state);
 }
 
 function cancelReset(state, participantId) {
@@ -334,6 +340,8 @@ function applyAction(state, body) {
       return requestReset(state, participantId);
     case "cancelReset":
       return cancelReset(state, participantId);
+    case "resetRoom":
+      return resetRoom(state, participantId);
     default:
       throw new Error("Unknown action type");
   }

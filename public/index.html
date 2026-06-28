@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ビリビリナンバー</title>
+    <title>Zap 12</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -11,12 +11,12 @@
       <header class="topbar">
         <div>
           <p class="label">Zap 12</p>
-          <h1>ビリビリナンバー</h1>
+          <h1>Zap 12</h1>
         </div>
         <button id="resetButton" class="ghost-button" type="button">RESET</button>
       </header>
 
-      <section class="scoreboard" aria-label="Scoreboard">
+      <section id="scoreboardSection" class="scoreboard" aria-label="Scoreboard">
         <div class="scoreboard-scroll">
           <table class="scoreboard-table">
             <thead id="scoreboardHead"></thead>
@@ -29,13 +29,25 @@
         </div>
       </section>
 
-      <section id="joinScreen" class="panel">
+      <section id="roomScreen" class="panel">
+        <p class="label">ROOM</p>
+        <h2>ROOM CODE</h2>
+        <div class="name-grid">
+          <label>
+            <span>ROOM</span>
+            <input id="roomInput" type="text" placeholder="部屋番号を入力" maxlength="32" />
+          </label>
+        </div>
+        <button id="roomButton" class="primary-button" type="button" disabled>入室</button>
+      </section>
+
+      <section id="joinScreen" class="panel hidden">
         <p class="label">JOIN</p>
         <h2>PLAYERS</h2>
         <div class="name-grid">
           <label>
             <span>NAME</span>
-            <input id="nameInput" type="text" value="Player" maxlength="16" />
+            <input id="nameInput" type="text" placeholder="名前を入力" maxlength="16" />
           </label>
         </div>
         <div class="button-grid">

@@ -3,6 +3,7 @@ const SETTINGS = {
 };
 
 const screens = {
+  room: document.querySelector("#roomScreen"),
   join: document.querySelector("#joinScreen"),
   lobby: document.querySelector("#lobbyScreen"),
   game: document.querySelector("#gameScreen"),
@@ -13,7 +14,7 @@ const screens = {
 const ids = (id) => document.querySelector(`#${id}`);
 
 const participantId = getOrCreateParticipantId();
-const roomId = getRoomId();
+let roomId = getInitialRoomId();
 
 let currentState = null;
 let selectedNumber = null;
@@ -34,19 +35,20 @@ function getOrCreateParticipantId() {
   return value;
 }
 
-function getRoomId() {
+function getInitialRoomId() {
   const params = new URLSearchParams(window.location.search);
-  return params.get("room") || params.get("instance_id") || params.get("instanceId") || "local";
+  return params.get("room") || params.get("instance_id") || params.get("instanceId") || "";
 }
 
 function showScreen(name) {
   Object.entries(screens).forEach(([screenName, element]) => {
     element.classList.toggle("hidden", screenName !== name);
   });
+  ids("scoreboardSection").classList.toggle("hidden", name === "room");
 }
 
 function playerName(state, role) {
-  return state.players[role]?.name || `Player ${role}`;
+  return state.players[role]?.name || role;
 }
 
 function meRole(state) {
@@ -78,6 +80,10 @@ async function request(path, options = {}) {
 }
 
 async function fetchState() {
+  if (!roomId) {
+    renderRoom();
+    return;
+  }
   if (polling) return;
   polling = true;
   try {
@@ -90,8 +96,27 @@ async function fetchState() {
   }
 }
 
+function enterRoom() {
+  const value = ids("roomInput").value.trim();
+  if (!value) {
+    ids("roomInput").focus();
+    return;
+  }
+
+  roomId = value.slice(0, 80);
+  const url = new URL(window.location.href);
+  url.searchParams.set("room", roomId);
+  window.history.replaceState({}, "", url);
+  fetchState();
+}
+
 async function postJoin(role) {
-  const name = ids("nameInput").value.trim() || "Player";
+  const name = ids("nameInput").value.trim();
+  if (!name) {
+    ids("nameInput").focus();
+    renderJoin(currentState);
+    return;
+  }
   currentState = await request("/api/join", {
     method: "POST",
     body: JSON.stringify({ participantId, name, role }),
@@ -104,16 +129,18 @@ async function postAction(type, payload = {}) {
     method: "POST",
     body: JSON.stringify({ participantId, type, payload }),
   });
+  if ((type === "resetRoom" || type === "requestReset") && !meRole(currentState)) {
+    ids("nameInput").value = "";
+  }
   selectedNumber = null;
   render();
 }
 
-async function postPreviewSeat(number) {
-  currentState = await request("/api/action", {
+function postPreviewSeat(number) {
+  request("/api/action", {
     method: "POST",
     body: JSON.stringify({ participantId, type: "previewSeat", payload: { number } }),
-  });
-  render();
+  }).catch(() => {});
 }
 
 function renderError(error) {
@@ -157,6 +184,12 @@ function render() {
   }
 
   renderWait(currentState);
+}
+
+function renderRoom() {
+  ids("resetButton").disabled = true;
+  ids("roomButton").disabled = ids("roomInput").value.trim().length === 0;
+  showScreen("room");
 }
 
 function updateScoreboard(state) {
@@ -230,8 +263,10 @@ function updateResetButton(state) {
 }
 
 function renderJoin(state) {
-  ids("joinAButton").disabled = Boolean(state.players.A.id);
-  ids("joinBButton").disabled = Boolean(state.players.B.id);
+  const hasName = ids("nameInput").value.trim().length > 0;
+  ids("joinAButton").disabled = !hasName || Boolean(state.players.A.id);
+  ids("joinBButton").disabled = !hasName || Boolean(state.players.B.id);
+  ids("watchButton").disabled = !hasName;
   showScreen("join");
 }
 
@@ -280,7 +315,7 @@ function renderGame(state) {
       selectedNumber = number;
       renderGame(state);
       if (state.phase === "seat") {
-        postPreviewSeat(number).catch(() => {});
+        postPreviewSeat(number);
       }
     },
   });
@@ -300,7 +335,9 @@ function renderWait(state) {
       : "相手の操作待ち";
 
   if (state.game.trappedNumber) {
-    buildResultGrid(ids("watchGrid"), canSeePreview ? state.game.previewSeat : null, state.game.trappedNumber);
+    buildResultGrid(ids("watchGrid"), canSeePreview ? state.game.previewSeat : null, state.game.trappedNumber, {
+      lockedSeats: state.game.occupiedSeats,
+    });
   } else {
     ids("watchGrid").replaceChildren();
   }
@@ -316,8 +353,8 @@ function renderResult(state) {
     ids("resultText").textContent = state.game.winner?.message || "";
     ids("resultGrid").replaceChildren();
   } else {
-    ids("resultKicker").textContent = result.shock ? "SHOCK" : "SAFE";
-    ids("resultTitle").textContent = state.phase === "gameOver" ? resultTitleForWinner(state) : result.shock ? "SHOCK" : "SAFE";
+    ids("resultKicker").textContent = result.shock ? "Zap!" : "SAFE";
+    ids("resultTitle").textContent = state.phase === "gameOver" ? resultTitleForWinner(state) : result.shock ? "Zap!" : "SAFE";
     ids("resultText").textContent = result.shock ? `${playerName(state, result.player)} ×${state.game.strikes[result.player]}` : `${playerName(state, result.player)} +${result.points}`;
     buildResultGrid(ids("resultGrid"), result.seat, result.trappedNumber);
   }
@@ -326,8 +363,8 @@ function renderResult(state) {
   screens.result.classList.toggle("is-safe", Boolean(result && !result.shock));
 
   const role = meRole(state);
-  ids("nextButton").disabled = state.phase === "gameOver" || !isPlayer(role);
-  ids("nextButton").textContent = state.phase === "gameOver" ? "GAME OVER" : "NEXT";
+  ids("nextButton").disabled = !isPlayer(role);
+  ids("nextButton").textContent = state.phase === "gameOver" ? "RESET ROOM" : "NEXT";
   showScreen("result");
 }
 
@@ -359,17 +396,20 @@ function buildNumberGrid(target, state, options = {}) {
   }
 }
 
-function buildResultGrid(target, guessedNumber, trappedNumber) {
+function buildResultGrid(target, guessedNumber, trappedNumber, options = {}) {
+  const lockedSeats = options.lockedSeats || [];
   target.replaceChildren();
   for (let number = 1; number <= SETTINGS.maxNumber; number += 1) {
+    const locked = lockedSeats.includes(number);
     const button = document.createElement("button");
     button.className = "number-button";
     button.type = "button";
     button.disabled = true;
+    button.classList.toggle("is-locked", locked);
     button.classList.toggle("is-guess", number === guessedNumber);
     button.classList.toggle("is-trap", number === trappedNumber);
     button.classList.toggle("is-hit", number === guessedNumber && number === trappedNumber);
-    button.innerHTML = `<span>${number}</span><small>PT</small>`;
+    button.innerHTML = `<span>${number}</span><small>${locked ? "LOCK" : "PT"}</small>`;
     target.append(button);
   }
 }
@@ -377,13 +417,25 @@ function buildResultGrid(target, guessedNumber, trappedNumber) {
 ids("joinAButton").addEventListener("click", () => postJoin("A").catch(renderError));
 ids("joinBButton").addEventListener("click", () => postJoin("B").catch(renderError));
 ids("watchButton").addEventListener("click", () => postJoin("spectator").catch(renderError));
+ids("roomButton").addEventListener("click", enterRoom);
+ids("roomInput").addEventListener("input", renderRoom);
+ids("roomInput").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") enterRoom();
+});
+ids("nameInput").addEventListener("input", () => {
+  if (currentState && !meRole(currentState)) renderJoin(currentState);
+});
 ids("lockInButton").addEventListener("click", () => postAction("lockIn").catch(renderError));
 ids("confirmButton").addEventListener("click", () => {
   if (selectedNumber === null || !currentState) return;
   const type = currentState.phase === "trap" ? "setTrap" : "chooseSeat";
   postAction(type, { number: selectedNumber }).catch(renderError);
 });
-ids("nextButton").addEventListener("click", () => postAction("next").catch(renderError));
+ids("nextButton").addEventListener("click", () => {
+  if (!currentState) return;
+  const type = currentState.phase === "gameOver" ? "resetRoom" : "next";
+  postAction(type).catch(renderError);
+});
 ids("resetButton").addEventListener("click", () => {
   if (!currentState) return;
   const role = meRole(currentState);
@@ -391,5 +443,10 @@ ids("resetButton").addEventListener("click", () => {
   postAction(type).catch(renderError);
 });
 
-fetchState();
+if (roomId) {
+  ids("roomInput").value = roomId;
+  fetchState();
+} else {
+  renderRoom();
+}
 setInterval(fetchState, 1000);

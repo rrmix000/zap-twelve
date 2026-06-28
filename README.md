@@ -1,9 +1,8 @@
 # Zap 12
 
-Discord Activity で遊ぶビリビリナンバーの試作です。
+Discord Activity で遊ぶ Zap 12 の試作です。
 
-日本語名: ビリビリナンバー
-英語名: Zap 12
+表示名: Zap 12
 repo/package 名: zap-twelve
 
 最初の実装はシンプル優先です。
