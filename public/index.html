@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>電気椅子ゲーム</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div>
+          <p class="label">Electric Chair</p>
+          <h1>電気椅子ゲーム</h1>
+        </div>
+        <button id="resetButton" class="ghost-button" type="button">RESET</button>
+      </header>
+
+      <section class="scoreboard" aria-label="Scoreboard">
+        <div class="scoreboard-scroll">
+          <table class="scoreboard-table">
+            <thead id="scoreboardHead"></thead>
+            <tbody id="scoreboardBody"></tbody>
+          </table>
+        </div>
+        <div class="scoreboard-meta">
+          <span id="roundNumber">ROUND 1</span>
+          <span id="seatCounter">SEATS 12</span>
+        </div>
+      </section>
+
+      <section id="joinScreen" class="panel">
+        <p class="label">JOIN</p>
+        <h2>PLAYERS</h2>
+        <div class="name-grid">
+          <label>
+            <span>NAME</span>
+            <input id="nameInput" type="text" value="Player" maxlength="16" />
+          </label>
+        </div>
+        <div class="button-grid">
+          <button id="joinAButton" class="primary-button" type="button">Aで参加</button>
+          <button id="joinBButton" class="primary-button" type="button">Bで参加</button>
+          <button id="watchButton" class="ghost-button" type="button">観戦</button>
+        </div>
+      </section>
+
+      <section id="lobbyScreen" class="panel hidden">
+        <p class="label">LOBBY</p>
+        <h2 id="lobbyTitle">WAITING</h2>
+        <div id="lobbySeats" class="seat-list"></div>
+        <button id="lockInButton" class="primary-button" type="button">LOCK IN</button>
+      </section>
+
+      <section id="gameScreen" class="panel hidden">
+        <p id="turnKicker" class="label"></p>
+        <h2 id="turnTitle"></h2>
+        <p id="turnText" class="muted"></p>
+        <div id="numberGrid" class="number-grid" aria-label="Numbers"></div>
+        <button id="confirmButton" class="primary-button" type="button" disabled>決定</button>
+      </section>
+
+      <section id="waitScreen" class="panel hidden">
+        <p class="label">WAIT</p>
+        <h2 id="waitTitle"></h2>
+        <p id="waitText" class="muted"></p>
+        <div id="watchGrid" class="number-grid result-grid" aria-label="Watch board"></div>
+      </section>
+
+      <section id="resultScreen" class="panel result-panel hidden">
+        <p id="resultKicker" class="label"></p>
+        <h2 id="resultTitle"></h2>
+        <p id="resultText" class="muted"></p>
+        <div id="resultGrid" class="number-grid result-grid" aria-label="Result board"></div>
+        <button id="nextButton" class="primary-button" type="button">NEXT</button>
+      </section>
+    </main>
+
+    <script src="./client.js" type="module"></script>
+  </body>
+</html>
